@@ -83,7 +83,7 @@ type Version struct {
 	AssemblySemVer                  string
 }
 
-func SplitTag(tag string) *Version {
+func TagToVersion(tag string) *Version {
 	arr := strings.Split(tag, ".")
 	major, _ := strconv.Atoi(arr[0])
 	minor, _ := strconv.Atoi(arr[1])
@@ -132,7 +132,7 @@ func main() {
 			log.Fatal("version is not in proper format 0.0.0")
 		}
 
-		version := SplitTag(tag)
+		version := TagToVersion(tag)
 
 		res, err = exec.Command("git", "rev-list", tag+"..", "--count").Output()
 		if err != nil {

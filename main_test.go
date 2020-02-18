@@ -16,3 +16,11 @@ func TestVersionToA(t *testing.T) {
 		t.Errorf("version conversion error, got %s, want: %s", f, "1.2.3")
 	}
 }
+
+func TestTagToVersion(t *testing.T) {
+	tag := "1.2.3"
+	ver:= TagToVersion(tag)
+	if ver.Major!= 1 && ver.Minor != 2 && ver.Patch != 3 {
+		t.Error("version is not consistent")
+	}
+}
