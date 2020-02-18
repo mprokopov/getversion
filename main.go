@@ -1,17 +1,18 @@
 package main
 
 import (
-	"strconv"
-	"flag"
-	"regexp"
-	"fmt"
-	"log"
-	"io/ioutil"
-	"os/exec"
-	"strings"
 	"encoding/json"
+	"flag"
+	"fmt"
+	"io/ioutil"
+	"log"
 	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"strings"
 )
+
 // func check(e error) {
 // 	if e != nil {
 // 		log.Fatal(e)
@@ -39,23 +40,47 @@ func FindInFile(re *regexp.Regexp, file string) string {
 	return string(version[1])
 }
 
-func GetGitBranch() string{
+func GetGitBranch() string {
 	res, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
 	CheckIfError(err)
 	return strings.TrimSpace(string(res))
 }
 
-type Version struct  {
-	Major int
-	Minor int
-	Patch int
-	CommitsSinceVersionSource int
-	PreReleaseTag string
-	PreReleaseLabel string
-	PreReleaseNumber int
-	SemVer string
-	BranchName string
-	AssemblySemVer string
+func RemoveFeatureFromBranch(feature string) string {
+	return strings.TrimLeft(feature, "feature/")
+}
+
+func GetPreReleaseLabel(branch string) string {
+	// alpha for develop
+	// feature name for feature
+	// no for release
+	isFeature, _ := regexp.MatchString(`feature/`, branch)
+
+	if isFeature {
+		return RemoveFeatureFromBranch(branch)
+	}
+	isDevelop, _ := regexp.MatchString(`^develop.*`, branch)
+
+	if isDevelop {
+		return "alpha"
+	}
+
+	return branch
+}
+
+type Version struct {
+	Major                           int
+	Minor                           int
+	Patch                           int
+	CommitsSinceVersionSource       int
+	CommitsSinceVersionSourcePadded string
+	PreReleaseTag                   string
+	PreReleaseTagWithDash           string
+	PreReleaseLabel                 string
+	PreReleaseNumber                int
+	SemVer                          string
+	BranchName                      string
+	AssemblySemVer                  string
 }
 
 func SplitTag(tag string) *Version {
@@ -63,8 +88,15 @@ func SplitTag(tag string) *Version {
 	major, _ := strconv.Atoi(arr[0])
 	minor, _ := strconv.Atoi(arr[1])
 	patch, _ := strconv.Atoi(arr[2])
-	version := Version{ Major: major, Minor: minor, Patch: patch }
+	version := Version{Major: major, Minor: minor, Patch: patch}
 	return &version
+}
+
+func VersionToA(version *Version) string {
+	major := strconv.Itoa(version.Major)
+	minor := strconv.Itoa(version.Minor)
+	patch := strconv.Itoa(version.Patch)
+	return major + "." + minor + "." + patch
 }
 
 func main() {
@@ -88,13 +120,13 @@ func main() {
 			log.Fatal("git rev-list does not have tags")
 		}
 		sha := strings.TrimSpace(string(res))
-		res, err = exec.Command("git", "tag","--points-at="+string(sha)).Output()
+		res, err = exec.Command("git", "tag", "--points-at="+string(sha)).Output()
 		if err != nil {
 			log.Fatal("git tag failed")
 		}
 		tag := strings.TrimSpace(string(res))
 
-		match,_ := regexp.Match(`\d+.\d+.\d+`, res)
+		match, _ := regexp.Match(`\d+.\d+.\d+`, res)
 
 		if !match {
 			log.Fatal("version is not in proper format 0.0.0")
@@ -110,19 +142,31 @@ func main() {
 		commits_count := strings.TrimSpace(string(res))
 
 		version.CommitsSinceVersionSource, err = strconv.Atoi(commits_count)
+		version.CommitsSinceVersionSourcePadded = fmt.Sprintf("%04d", version.CommitsSinceVersionSource)
 
 		CheckIfError(err)
 
-		version.BranchName =  GetGitBranch()
+		version.BranchName = GetGitBranch()
+		version.PreReleaseLabel = GetPreReleaseLabel(version.BranchName)
+		version.PreReleaseTag = version.PreReleaseLabel + "." + strconv.Itoa(version.CommitsSinceVersionSource)
+		version.PreReleaseTagWithDash = "-" + version.PreReleaseTag
 
-		version.PreReleaseLabel = version.BranchName // remove feature/
+		isRelease, _ := regexp.MatchString(`^release.*|master`, version.BranchName)
 
-		jsVersion,_ := json.Marshal(version)
+		if !isRelease {
+			version.Minor = version.Minor + 1
+		}
+
+		version.SemVer = VersionToA(version) + version.PreReleaseTagWithDash
+
+		jsVersion, _ := json.Marshal(version)
 		fmt.Println(string(jsVersion))
+
 	default:
 		log.Fatal("wrong source for version, should be gradle or node")
 	}
 }
+
 // {
 // 	"Major":0,
 // 	"Minor":1,
