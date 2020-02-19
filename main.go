@@ -28,7 +28,7 @@ func CheckIfError(err error) {
 	os.Exit(1)
 }
 
-func FindInFile(re *regexp.Regexp, file string) string {
+func FindVersionInFile(re *regexp.Regexp, file string) string {
 	dat, err := ioutil.ReadFile(file)
 	CheckIfError(err)
 	version := re.FindSubmatch(dat)
@@ -65,6 +65,18 @@ func GetPreReleaseLabel(branch string) string {
 		return "alpha"
 	}
 
+	isRelease, _ := regexp.MatchString(`^release.*|^hotfix.*`, branch)
+
+	if isRelease {
+		return "beta"
+	}
+
+	isMaster, _ := regexp.MatchString(`^master`, branch)
+
+	if isMaster {
+		return ""
+	}
+
 	return branch
 }
 
@@ -81,6 +93,7 @@ type Version struct {
 	SemVer                          string
 	BranchName                      string
 	AssemblySemVer                  string
+	BuildMetaData string
 }
 
 func TagToVersion(tag string) *Version {
@@ -101,20 +114,25 @@ func VersionToA(version *Version) string {
 
 func main() {
 	source := flag.String("source", "gradle", "version source")
+	build_id := flag.String("build-id", "0", "build id")
 	flag.Parse()
+
+	var version *Version
+	var isRelease bool
+	isRelease = true
 
 	switch *source {
 	case "gradle":
 		re := regexp.MustCompile(`(?m)^version=(\d+.\d+.\d+).*`)
-		version := FindInFile(re, "gradle.properties")
+		str := FindVersionInFile(re, "gradle.properties")
 
-		fmt.Print(version)
+		version = TagToVersion(str)
 	case "node":
 		re := regexp.MustCompile(`"version": "(\d+.\d+.\d+).*"`)
-		version := FindInFile(re, "package.json")
+		str := FindVersionInFile(re, "package.json")
 
-		fmt.Print(version)
-	case "git":
+		version = TagToVersion(str)
+	case "git-tag":
 		res, err := exec.Command("git", "rev-list", "--tags", "--no-walk", "--max-count=1").Output()
 		if err != nil {
 			log.Fatal("git rev-list does not have tags")
@@ -132,7 +150,7 @@ func main() {
 			log.Fatal("version is not in proper format 0.0.0")
 		}
 
-		version := TagToVersion(tag)
+		version = TagToVersion(tag)
 
 		res, err = exec.Command("git", "rev-list", tag+"..", "--count").Output()
 		if err != nil {
@@ -147,24 +165,27 @@ func main() {
 		CheckIfError(err)
 
 		version.BranchName = GetGitBranch()
-		version.PreReleaseLabel = GetPreReleaseLabel(version.BranchName)
-		version.PreReleaseTag = version.PreReleaseLabel + "." + strconv.Itoa(version.CommitsSinceVersionSource)
-		version.PreReleaseTagWithDash = "-" + version.PreReleaseTag
 
-		isRelease, _ := regexp.MatchString(`^release.*|master`, version.BranchName)
-
-		if !isRelease {
-			version.Minor = version.Minor + 1
-		}
-
-		version.SemVer = VersionToA(version) + version.PreReleaseTagWithDash
-
-		jsVersion, _ := json.Marshal(version)
-		fmt.Println(string(jsVersion))
+		isRelease, _ = regexp.MatchString(`^release.*|master`, version.BranchName)
 
 	default:
 		log.Fatal("wrong source for version, should be gradle or node")
 	}
+
+	if isRelease {
+		version.Patch = version.Patch +1
+		version.SemVer = VersionToA(version)
+	} else {
+		version.PreReleaseLabel = GetPreReleaseLabel(version.BranchName)
+		version.PreReleaseTag = version.PreReleaseLabel + "." + strconv.Itoa(version.CommitsSinceVersionSource)
+		version.PreReleaseTagWithDash = "-" + version.PreReleaseTag
+		version.Minor = version.Minor + 1
+		version.SemVer = VersionToA(version) + version.PreReleaseTagWithDash
+	}
+	version.BuildMetaData = *build_id
+	version.AssemblySemVer = version.SemVer + "." + *build_id
+	jsVersion, _ := json.Marshal(version)
+	fmt.Println(string(jsVersion))
 }
 
 // {
