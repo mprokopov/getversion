@@ -44,7 +44,8 @@ func GetGitBranch() string {
 	}
 
 	if os.Getenv("GIT_BRANCH") != "" {
-		return os.Getenv("GIT_BRANCH") // Jenkins sets this for pipeline
+		// Jenkins sets this for pipeline and appends origin/
+		return strings.TrimLeft(os.Getenv("GIT_BRANCH"), "origin/") 
 	}
 
 	res, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
