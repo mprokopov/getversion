@@ -36,6 +36,17 @@ func FindVersionStringInFile(re *regexp.Regexp, file string) string {
 }
 
 func GetGitBranch() string {
+
+	// Jenkins uses GIT_BRANCH for pipeline
+	// and BRANCH_NAME for pultibranch pipeline
+	if os.Getenv("BRANCH_NAME") != "" {
+		return os.Getenv("BRANCH_NAME") // Jenkins sets this for multibranch pipeline
+	}
+
+	if os.Getenv("GIT_BRANCH") != "" {
+		return os.Getenv("GIT_BRANCH") // Jenkins sets this for pipeline
+	}
+
 	res, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
 	CheckIfError(err)
 	return strings.TrimSpace(string(res))
@@ -181,13 +192,7 @@ func main() {
 
 		CheckIfError(err)
 
-		// Jenkins uses GIT_BRANCH for pipeline
-		// and BRANCH_NAME for pultibranch pipeline
-		if os.Getenv("BRANCH_NAME") != "" {
-			version.BranchName = os.Getenv("BRANCH_NAME") // Jenkins sets this
-		} else {
-			version.BranchName = GetGitBranch()
-		}
+		version.BranchName = GetGitBranch()
 
 		isRelease, _ = regexp.MatchString(`^release.*|master|^hotfix.*`, version.BranchName)
 
