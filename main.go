@@ -181,6 +181,8 @@ func main() {
 
 		CheckIfError(err)
 
+		// Jenkins uses GIT_BRANCH for pipeline
+		// and BRANCH_NAME for pultibranch pipeline
 		if os.Getenv("BRANCH_NAME") != "" {
 			version.BranchName = os.Getenv("BRANCH_NAME") // Jenkins sets this
 		} else {
@@ -197,16 +199,24 @@ func main() {
 	version.PreReleaseTag = version.PreReleaseLabel + "." + strconv.Itoa(version.CommitsSinceVersionSource)
 	version.PreReleaseTagWithDash = "-" + version.PreReleaseTag
 
-	if isRelease {
-		version.SemVer = VersionToA(version)
-		isHotfix, _ := regexp.MatchString(`^hotfix.*`, version.BranchName)
-		if isHotfix {
-			version.Patch = version.Patch + 1
-		}
-	} else {
+	isMaster, _ := regexp.MatchString(`^master`, version.BranchName)
+
+	isHotfix, _ := regexp.MatchString(`^hotfix.*`, version.BranchName)
+
+	if isHotfix {
+		version.Patch = version.Patch + 1
+	}
+
+	if !isRelease {
 		version.Minor = version.Minor + 1
+	}
+
+	if isMaster {
+		version.SemVer = VersionToA(version)
+	} else {
 		version.SemVer = VersionToA(version) + version.PreReleaseTagWithDash
 	}
+
 	version.BuildMetaData = *build_id
 	version.AssemblySemVer = version.SemVer + "." + *build_id
 	jsonOutput, _ := json.Marshal(version)
