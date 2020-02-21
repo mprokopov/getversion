@@ -36,7 +36,6 @@ func FindVersionStringInFile(re *regexp.Regexp, file string) string {
 }
 
 func GetGitBranch() string {
-
 	// Jenkins uses GIT_BRANCH for pipeline
 	// and BRANCH_NAME for pultibranch pipeline
 	if os.Getenv("BRANCH_NAME") != "" {
@@ -45,12 +44,26 @@ func GetGitBranch() string {
 
 	if os.Getenv("GIT_BRANCH") != "" {
 		// Jenkins sets this for pipeline and appends origin/
-		return strings.TrimLeft(os.Getenv("GIT_BRANCH"), "origin/") 
+		return strings.TrimPrefix(os.Getenv("GIT_BRANCH"), "origin/")
 	}
 
 	res, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
 	CheckIfError(err)
 	return strings.TrimSpace(string(res))
+}
+
+func (ver *Version) GetPreReleaseLabel2() string {
+	if ver.IsMaster() {
+		return ""
+	}
+
+	if ver.IsRelease() {
+		return "beta"
+	}
+	if ver.IsDevelop() {
+		return "alpha"
+	}
+	return ver.BranchName
 }
 
 func GetPreReleaseLabel(branch string) string {
@@ -61,7 +74,7 @@ func GetPreReleaseLabel(branch string) string {
 	isFeature, _ := regexp.MatchString(`feature/`, branch)
 
 	if isFeature {
-		return strings.TrimLeft(branch, "feature/")
+		return strings.TrimPrefix(branch, "feature/")
 	}
 	isDevelop, _ := regexp.MatchString(`^develop.*`, branch)
 
@@ -84,23 +97,29 @@ func GetPreReleaseLabel(branch string) string {
 	return branch
 }
 
-func GetBaseVersion(source *string) *Version {
-	var version *Version
-
+func GetBaseVersion(source *string) string {
 	switch *source {
 	case "gradle":
 		re := regexp.MustCompile(`(?m)^version=(\d+.\d+.\d+).*`)
 		str := FindVersionStringInFile(re, "gradle.properties")
 
-		version = StrToVersion(str)
+		return str
 	case "node":
 		re := regexp.MustCompile(`"version": "(\d+.\d+.\d+).*"`)
 		str := FindVersionStringInFile(re, "package.json")
 
-		version = StrToVersion(str)
-		// case "git-tag":
+		return str
+	case "git-tag":
+		branch := GetGitBranch()
+		re := regexp.MustCompile(`release[-/](\d+.\d+.\d+)`)
+		ver := re.FindStringSubmatch(branch)
+		if ver != nil {
+			return ver[1]
+		} else {
+			return VersionStringFromGitTag()
+		}
 	}
-	return version
+	return "0.0.1"
 }
 
 type Version struct {
@@ -128,6 +147,38 @@ func StrToVersion(tag string) *Version {
 	return &version
 }
 
+func (ver *Version) FromString(tag string) {
+	arr := strings.Split(tag, ".")
+	ver.Major, _ = strconv.Atoi(arr[0])
+	ver.Minor, _ = strconv.Atoi(arr[1])
+	ver.Patch, _ = strconv.Atoi(arr[2])
+	return
+}
+
+func (ver *Version) IsRelease() bool {
+	isRelease, _ := regexp.MatchString(`^release.*|master|^hotfix.*`, ver.BranchName)
+
+	return isRelease
+}
+
+func (ver *Version) IsMaster() bool {
+	isMaster, _ := regexp.MatchString(`^master`, ver.BranchName)
+
+	return isMaster
+}
+
+func (ver *Version) IsHotfix() bool {
+	isHotfix, _ := regexp.MatchString(`^hotfix`, ver.BranchName)
+
+	return isHotfix
+}
+
+func (ver *Version) IsDevelop() bool {
+	isDevelop, _ := regexp.MatchString(`^develop`, ver.BranchName)
+
+	return isDevelop
+}
+
 func VersionToA(version *Version) string {
 	major := strconv.Itoa(version.Major)
 	minor := strconv.Itoa(version.Minor)
@@ -141,6 +192,36 @@ func getField(v *Version, field string) string {
 	return string(f.String())
 }
 
+func GetGitCommitsCount(tag string) string {
+	res, err := exec.Command("git", "rev-list", tag+"..", "--count").Output()
+
+	if err != nil {
+		log.Fatal("git rev-list doesn't return proper count")
+	}
+
+	return strings.TrimSpace(string(res))
+}
+
+func VersionStringFromGitTag() string {
+	res, err := exec.Command("git", "rev-list", "--tags", "--no-walk", "--max-count=1").Output()
+	if err != nil {
+		log.Fatal("git rev-list does not have tags")
+	}
+	sha := strings.TrimSpace(string(res))
+	res, err = exec.Command("git", "tag", "--points-at="+string(sha)).Output()
+	if err != nil {
+		log.Fatal("git tag failed")
+	}
+	tag := strings.TrimSpace(string(res))
+
+	match, _ := regexp.Match(`\d+.\d+.\d+`, res)
+
+	if !match {
+		log.Fatal("version is not in proper format 0.0.0")
+	}
+	return tag
+}
+
 func main() {
 	source := flag.String("source", "gradle", "version source")
 	build_id := flag.String("build-id", "0", "build id")
@@ -148,76 +229,76 @@ func main() {
 	flag.Parse()
 
 	var version *Version
-	var isRelease = true
 
-	switch *source {
-	case "gradle":
-		re := regexp.MustCompile(`(?m)^version=(\d+.\d+.\d+).*`)
-		str := FindVersionStringInFile(re, "gradle.properties")
+	// switch *source {
+	// case "gradle":
+	// 	re := regexp.MustCompile(`(?m)^version=(\d+.\d+.\d+).*`)
+	// 	str := FindVersionStringInFile(re, "gradle.properties")
 
-		version = StrToVersion(str)
-	case "node":
-		re := regexp.MustCompile(`"version": "(\d+.\d+.\d+).*"`)
-		str := FindVersionStringInFile(re, "package.json")
+	// 	version = StrToVersion(str)
+	// case "node":
+	// 	re := regexp.MustCompile(`"version": "(\d+.\d+.\d+).*"`)
+	// 	str := FindVersionStringInFile(re, "package.json")
 
-		version = StrToVersion(str)
-	case "git-tag":
-		res, err := exec.Command("git", "rev-list", "--tags", "--no-walk", "--max-count=1").Output()
-		if err != nil {
-			log.Fatal("git rev-list does not have tags")
-		}
-		sha := strings.TrimSpace(string(res))
-		res, err = exec.Command("git", "tag", "--points-at="+string(sha)).Output()
-		if err != nil {
-			log.Fatal("git tag failed")
-		}
-		tag := strings.TrimSpace(string(res))
+	// 	version = StrToVersion(str)
+	// case "git-tag":
+	// 	res, err := exec.Command("git", "rev-list", "--tags", "--no-walk", "--max-count=1").Output()
+	// 	if err != nil {
+	// 		log.Fatal("git rev-list does not have tags")
+	// 	}
+	// 	sha := strings.TrimSpace(string(res))
+	// 	res, err = exec.Command("git", "tag", "--points-at="+string(sha)).Output()
+	// 	if err != nil {
+	// 		log.Fatal("git tag failed")
+	// 	}
+	// 	tag := strings.TrimSpace(string(res))
 
-		match, _ := regexp.Match(`\d+.\d+.\d+`, res)
+	// 	match, _ := regexp.Match(`\d+.\d+.\d+`, res)
 
-		if !match {
-			log.Fatal("version is not in proper format 0.0.0")
-		}
+	// 	if !match {
+	// 		log.Fatal("version is not in proper format 0.0.0")
+	// 	}
 
-		version = StrToVersion(tag)
+	// 	version = StrToVersion(tag)
+	// 	//
 
-		res, err = exec.Command("git", "rev-list", tag+"..", "--count").Output()
-		if err != nil {
-			log.Fatal("git rev-list doesn't return proper count")
-		}
+	// 	res, err = exec.Command("git", "rev-list", tag+"..", "--count").Output()
+	// 	if err != nil {
+	// 		log.Fatal("git rev-list doesn't return proper count")
+	// 	}
 
-		commits_count := strings.TrimSpace(string(res))
+	// 	commits_count := strings.TrimSpace(string(res))
 
-		version.CommitsSinceVersionSource, err = strconv.Atoi(commits_count)
+	// 	version.CommitsSinceVersionSource, err = strconv.Atoi(commits_count)
+	// 	version.CommitsSinceVersionSourcePadded = fmt.Sprintf("%04d", version.CommitsSinceVersionSource)
+
+	// 	CheckIfError(err)
+	// default:
+	// 	log.Fatal("wrong source for version, should be gradle or node")
+	// }
+
+	version = StrToVersion(GetBaseVersion(source))
+	version.BranchName = GetGitBranch()
+
+	if *source == "git-tag" {
+		version.CommitsSinceVersionSource, _ = strconv.Atoi(GetGitCommitsCount(version.BranchName))
 		version.CommitsSinceVersionSourcePadded = fmt.Sprintf("%04d", version.CommitsSinceVersionSource)
-
-		CheckIfError(err)
-
-		version.BranchName = GetGitBranch()
-
-		isRelease, _ = regexp.MatchString(`^release.*|master|^hotfix.*`, version.BranchName)
-
-	default:
-		log.Fatal("wrong source for version, should be gradle or node")
 	}
 
-	version.PreReleaseLabel = GetPreReleaseLabel(version.BranchName)
+	// version.PreReleaseLabel = GetPreReleaseLabel(version.BranchName)
+	version.PreReleaseLabel = version.GetPreReleaseLabel2()
 	version.PreReleaseTag = version.PreReleaseLabel + "." + strconv.Itoa(version.CommitsSinceVersionSource)
 	version.PreReleaseTagWithDash = "-" + version.PreReleaseTag
 
-	isMaster, _ := regexp.MatchString(`^master`, version.BranchName)
-
-	isHotfix, _ := regexp.MatchString(`^hotfix.*`, version.BranchName)
-
-	if isHotfix {
+	if version.IsHotfix() {
 		version.Patch = version.Patch + 1
 	}
 
-	if !isRelease {
+	if !version.IsRelease() {
 		version.Minor = version.Minor + 1
 	}
 
-	if isMaster {
+	if version.IsMaster() {
 		version.SemVer = VersionToA(version)
 	} else {
 		version.SemVer = VersionToA(version) + version.PreReleaseTagWithDash
@@ -225,9 +306,9 @@ func main() {
 
 	version.BuildMetaData = *build_id
 	version.AssemblySemVer = version.SemVer + "." + *build_id
-	jsonOutput, _ := json.Marshal(version)
 
 	if *showvariable == "" {
+		jsonOutput, _ := json.Marshal(version)
 		fmt.Println(string(jsonOutput))
 	} else {
 		fmt.Println(getField(version, *showvariable))
