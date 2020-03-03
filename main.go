@@ -155,6 +155,10 @@ func (ver *Version) FromString(tag string) {
 	return
 }
 
+func (ver *Version) ToString() string {
+	return fmt.Sprintf("%d.%d.%d", ver.Major, ver.Minor, ver.Patch)
+}
+
 func (ver *Version) IsRelease() bool {
 	isRelease, _ := regexp.MatchString(`^release.*|master|^hotfix.*`, ver.BranchName)
 
@@ -191,14 +195,15 @@ func getField(v *Version, field string) string {
 	f := reflect.Indirect(r).FieldByName(field)
 	return string(f.String())
 }
-
-func GetGitCommitsCount(tag string) string {
-	res, err := exec.Command("git", "rev-list", tag+"..", "--count").Output()
+// for feature = develop - feature
+// for develop = master - develop
+// for master = 0
+func (ver *Version) GetGitCommitsCount() string {
+	res, err := exec.Command("git", "rev-list", ver.ToString()+".."+ver.BranchName, "--count").Output()
 
 	if err != nil {
 		log.Fatal("git rev-list doesn't return proper count")
 	}
-
 	return strings.TrimSpace(string(res))
 }
 
@@ -230,58 +235,11 @@ func main() {
 
 	var version *Version
 
-	// switch *source {
-	// case "gradle":
-	// 	re := regexp.MustCompile(`(?m)^version=(\d+.\d+.\d+).*`)
-	// 	str := FindVersionStringInFile(re, "gradle.properties")
-
-	// 	version = StrToVersion(str)
-	// case "node":
-	// 	re := regexp.MustCompile(`"version": "(\d+.\d+.\d+).*"`)
-	// 	str := FindVersionStringInFile(re, "package.json")
-
-	// 	version = StrToVersion(str)
-	// case "git-tag":
-	// 	res, err := exec.Command("git", "rev-list", "--tags", "--no-walk", "--max-count=1").Output()
-	// 	if err != nil {
-	// 		log.Fatal("git rev-list does not have tags")
-	// 	}
-	// 	sha := strings.TrimSpace(string(res))
-	// 	res, err = exec.Command("git", "tag", "--points-at="+string(sha)).Output()
-	// 	if err != nil {
-	// 		log.Fatal("git tag failed")
-	// 	}
-	// 	tag := strings.TrimSpace(string(res))
-
-	// 	match, _ := regexp.Match(`\d+.\d+.\d+`, res)
-
-	// 	if !match {
-	// 		log.Fatal("version is not in proper format 0.0.0")
-	// 	}
-
-	// 	version = StrToVersion(tag)
-	// 	//
-
-	// 	res, err = exec.Command("git", "rev-list", tag+"..", "--count").Output()
-	// 	if err != nil {
-	// 		log.Fatal("git rev-list doesn't return proper count")
-	// 	}
-
-	// 	commits_count := strings.TrimSpace(string(res))
-
-	// 	version.CommitsSinceVersionSource, err = strconv.Atoi(commits_count)
-	// 	version.CommitsSinceVersionSourcePadded = fmt.Sprintf("%04d", version.CommitsSinceVersionSource)
-
-	// 	CheckIfError(err)
-	// default:
-	// 	log.Fatal("wrong source for version, should be gradle or node")
-	// }
-
 	version = StrToVersion(GetBaseVersion(source))
 	version.BranchName = GetGitBranch()
 
 	if *source == "git-tag" {
-		version.CommitsSinceVersionSource, _ = strconv.Atoi(GetGitCommitsCount(version.BranchName))
+		version.CommitsSinceVersionSource, _ = strconv.Atoi(version.GetGitCommitsCount())
 		version.CommitsSinceVersionSourcePadded = fmt.Sprintf("%04d", version.CommitsSinceVersionSource)
 	}
 
@@ -347,3 +305,51 @@ func main() {
 // 	"CommitsSinceVersionSourcePadded":"0001",
 // 	"CommitDate":"2020-02-17"
 // }
+
+
+	// switch *source {
+	// case "gradle":
+	// 	re := regexp.MustCompile(`(?m)^version=(\d+.\d+.\d+).*`)
+	// 	str := FindVersionStringInFile(re, "gradle.properties")
+
+	// 	version = StrToVersion(str)
+	// case "node":
+	// 	re := regexp.MustCompile(`"version": "(\d+.\d+.\d+).*"`)
+	// 	str := FindVersionStringInFile(re, "package.json")
+
+	// 	version = StrToVersion(str)
+	// case "git-tag":
+	// 	res, err := exec.Command("git", "rev-list", "--tags", "--no-walk", "--max-count=1").Output()
+	// 	if err != nil {
+	// 		log.Fatal("git rev-list does not have tags")
+	// 	}
+	// 	sha := strings.TrimSpace(string(res))
+	// 	res, err = exec.Command("git", "tag", "--points-at="+string(sha)).Output()
+	// 	if err != nil {
+	// 		log.Fatal("git tag failed")
+	// 	}
+	// 	tag := strings.TrimSpace(string(res))
+
+	// 	match, _ := regexp.Match(`\d+.\d+.\d+`, res)
+
+	// 	if !match {
+	// 		log.Fatal("version is not in proper format 0.0.0")
+	// 	}
+
+	// 	version = StrToVersion(tag)
+	// 	//
+
+	// 	res, err = exec.Command("git", "rev-list", tag+"..", "--count").Output()
+	// 	if err != nil {
+	// 		log.Fatal("git rev-list doesn't return proper count")
+	// 	}
+
+	// 	commits_count := strings.TrimSpace(string(res))
+
+	// 	version.CommitsSinceVersionSource, err = strconv.Atoi(commits_count)
+	// 	version.CommitsSinceVersionSourcePadded = fmt.Sprintf("%04d", version.CommitsSinceVersionSource)
+
+	// 	CheckIfError(err)
+	// default:
+	// 	log.Fatal("wrong source for version, should be gradle or node")
+	// }
