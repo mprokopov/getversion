@@ -12,6 +12,8 @@ in Jenkinsfile you can call it like
 
 `def dockerTag = sh(script: "getversion -source=git-tag -build-id=${BUILD_ID} -showvariable=AssemblySemVer", returnStdout: true)`
 
+this will return only AssemblySemVer which is in X.X.X.Y format, where X is SemVer variable and Y is supplied build number.
+
 ### Git tags
 Tries to find most recent tag and determines a number of commits since then.
 
